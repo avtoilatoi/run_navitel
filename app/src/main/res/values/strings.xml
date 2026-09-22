@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Navitel PiP Restarter</string>
+    <string name="notification_channel_name">Dịch vụ giám sát Navitel</string>
+    <string name="notification_channel_desc">Thông báo trạng thái theo dõi kết nối mạng và phục hồi Navitel PiP</string>
+    <string name="notification_title">Navitel PiP Restarter</string>
+    <string name="notification_monitoring">Đang theo dõi kết nối để phục hồi Navitel</string>
+    <string name="notification_action_stop">Dừng dịch vụ</string>
+    <string name="pip_navitel_target">com.navitel/.app.MainActivity</string>
+    <string name="pip_browser_target">com.github.slashmax.aabrowser</string>
+</resources>

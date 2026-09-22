@@ -1,0 +1,6 @@
+{
+  "name": "Navitel PiP Restarter",
+  "description": "Phục hồi và khởi động lạnh Navitel trên secondary display PiP sau khi Android box ô tô kết nối Internet.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

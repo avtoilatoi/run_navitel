@@ -1,0 +1,137 @@
+name: Build & Publish APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Tạo GitHub Release và phát hành APK?'
+        required: false
+        type: boolean
+        default: true
+      release_tag:
+        description: 'Thẻ phiên bản (để trống sẽ tự tạo theo số thứ tự run)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build & Publish APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Prepare Signing Keystores
+        run: |
+          echo "=== Chuẩn bị Keystore ký ứng dụng ==="
+          
+          # 1. Tạo debug.keystore nếu có file base64 hoặc tạo mới
+          if [ -f "debug.keystore.base64" ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          else
+            keytool -genkeypair -v -keystore debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug, O=Android, C=US"
+          fi
+
+          # 2. Tạo hoặc giải mã upload keystore cho bản Release
+          if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
+            echo "Đang giải mã keystore Release từ GitHub Secret..."
+            echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > my-upload-key.jks
+          else
+            echo "Tạo signing key tự động cho bản Release..."
+            keytool -genkeypair -v -keystore my-upload-key.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=NavitelPiPRestarter, OU=Android, O=LECO, L=Car, S=Auto, C=VN"
+          fi
+
+      - name: Build Debug & Release APKs
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || 'android' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug assembleRelease --stacktrace
+
+      - name: Organize APK Artifacts
+        run: |
+          mkdir -p artifacts
+          
+          if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+            cp app/build/outputs/apk/debug/app-debug.apk artifacts/NavitelPiPRestarter-debug.apk
+            echo "Đã đóng gói NavitelPiPRestarter-debug.apk"
+          fi
+          
+          if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
+            cp app/build/outputs/apk/release/app-release.apk artifacts/NavitelPiPRestarter-release.apk
+            echo "Đã đóng gói NavitelPiPRestarter-release.apk"
+          fi
+          
+          ls -la artifacts/
+
+      - name: Upload APKs as GitHub Run Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: NavitelPiPRestarter-APKs
+          path: artifacts/*.apk
+          retention-days: 30
+
+      - name: Determine Release Tag
+        id: release_info
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true')
+        run: |
+          if [ -n "${{ github.event.inputs.release_tag }}" ]; then
+            TAG_NAME="${{ github.event.inputs.release_tag }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+          else
+            TAG_NAME="v1.0.${{ github.run_number }}"
+          fi
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true')
+        with:
+          tag_name: ${{ steps.release_info.outputs.tag_name }}
+          name: "Navitel PiP Restarter ${{ steps.release_info.outputs.tag_name }}"
+          body: |
+            ### 🚗 Navitel PiP Restarter - Bản phát hành tự động
+
+            Ứng dụng tự động phục hồi và khởi động lạnh Navitel trên secondary display PiP dành cho Android Box ô tô chạy launcher LECO Auto.
+
+            #### 📦 Tải xuống APK:
+            - **NavitelPiPRestarter-release.apk**: Bản phát hành tối ưu dùng trên ô tô.
+            - **NavitelPiPRestarter-debug.apk**: Bản debug hỗ trợ kiểm thử và xem log qua ADB.
+
+            #### 🛠 Cài đặt:
+            ```bash
+            # Cài qua ADB mạng không dây hoặc USB:
+            adb connect <IP_XE>:5555
+            adb install -r NavitelPiPRestarter-release.apk
+            ```
+          files: |
+            artifacts/NavitelPiPRestarter-*.apk
+          draft: false
+          prerelease: false
